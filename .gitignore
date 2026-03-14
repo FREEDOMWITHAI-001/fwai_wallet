@@ -4,3 +4,4 @@ instance/
 *.db
 .env
 venv/
+.vercel

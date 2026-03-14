@@ -18,8 +18,13 @@ from flask_wtf.csrf import CSRFProtect
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", secrets.token_hex(32))
+# Use /tmp on Vercel (read-only filesystem), local instance dir otherwise
+_is_vercel = os.environ.get("VERCEL", False)
+_db_path = "/tmp/secrets.db" if _is_vercel else os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "instance", "secrets.db"
+)
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-    "DATABASE_URL", "sqlite:///secrets.db"
+    "DATABASE_URL", f"sqlite:///{_db_path}"
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SESSION_COOKIE_HTTPONLY"] = True
