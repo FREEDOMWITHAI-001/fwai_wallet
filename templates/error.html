@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Error {{ code }}{% endblock %}
+
+{% block content %}
+<div class="flex min-h-[60vh] items-center justify-center">
+    <div class="text-center">
+        <p class="text-6xl font-bold text-brand-400">{{ code }}</p>
+        <h1 class="mt-4 text-xl font-semibold text-white">{{ message }}</h1>
+        <p class="mt-2 text-sm text-gray-400">
+            {% if code == 403 %}
+            You don't have permission to access this resource.
+            {% elif code == 404 %}
+            The page you're looking for doesn't exist.
+            {% else %}
+            Something went wrong.
+            {% endif %}
+        </p>
+        <a href="{{ url_for('dashboard') if current_user else url_for('login') }}"
+           class="mt-6 inline-flex items-center gap-2 rounded-lg bg-gray-800 px-4 py-2.5 text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white transition">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"/>
+            </svg>
+            Go back
+        </a>
+    </div>
+</div>
+{% endblock %}

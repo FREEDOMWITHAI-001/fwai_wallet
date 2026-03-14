@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-950">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Vault{% endblock %} | SecureVault</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+<body class="h-full">
+    <div class="min-h-full">
+        {% if current_user %}
+        <nav class="bg-gray-900 border-b border-gray-800">
+            <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                <div class="flex h-16 items-center justify-between">
+                    <div class="flex items-center gap-8">
+                        <a href="{{ url_for('dashboard') }}" class="flex items-center gap-2">
+                            <svg class="h-8 w-8 text-brand-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
+                            </svg>
+                            <span class="text-white font-bold text-lg">SecureVault</span>
+                        </a>
+                        <div class="flex gap-1">
+                            <a href="{{ url_for('dashboard') }}"
+                               class="rounded-md px-3 py-2 text-sm font-medium {% if request.endpoint == 'dashboard' %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-800 hover:text-white{% endif %} transition">
+                                Dashboard
+                            </a>
+                            <a href="{{ url_for('secret_create') }}"
+                               class="rounded-md px-3 py-2 text-sm font-medium {% if request.endpoint == 'secret_create' %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-800 hover:text-white{% endif %} transition">
+                                New Secret
+                            </a>
+                            {% if current_user.role == 'admin' %}
+                            <a href="{{ url_for('admin_users') }}"
+                               class="rounded-md px-3 py-2 text-sm font-medium {% if 'admin' in request.endpoint %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-800 hover:text-white{% endif %} transition">
+                                Admin
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <div class="text-sm">
+                            <span class="text-gray-400">Signed in as</span>
+                            <span class="text-white font-medium ml-1">{{ current_user.username }}</span>
+                            {% if current_user.role == 'admin' %}
+                            <span class="ml-1 inline-flex items-center rounded-full bg-brand-500/20 px-2 py-0.5 text-xs font-medium text-brand-300">Admin</span>
+                            {% endif %}
+                        </div>
+                        <form method="POST" action="{{ url_for('logout') }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit"
+                                    class="rounded-md bg-gray-800 px-3 py-1.5 text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white transition">
+                                Logout
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </nav>
+        {% endif %}
+
+        <main class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            <div class="mb-6 space-y-2">
+                {% for category, message in messages %}
+                <div class="rounded-lg px-4 py-3 text-sm font-medium
+                    {% if category == 'success' %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/20
+                    {% elif category == 'danger' %}bg-red-500/10 text-red-400 border border-red-500/20
+                    {% elif category == 'warning' %}bg-amber-500/10 text-amber-400 border border-amber-500/20
+                    {% else %}bg-blue-500/10 text-blue-400 border border-blue-500/20{% endif %}">
+                    {{ message }}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% endwith %}
+
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</body>
+</html>

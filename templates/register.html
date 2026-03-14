@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Register{% endblock %}
+
+{% block content %}
+<div class="flex min-h-[80vh] items-center justify-center">
+    <div class="w-full max-w-md">
+        <div class="text-center mb-8">
+            <svg class="mx-auto h-12 w-12 text-brand-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM3 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 019.374 21c-2.331 0-4.512-.645-6.374-1.766z"/>
+            </svg>
+            <h2 class="mt-4 text-2xl font-bold text-white">Create your account</h2>
+            <p class="mt-2 text-sm text-gray-400">Start managing your secrets securely</p>
+        </div>
+
+        <div class="bg-gray-900 rounded-xl border border-gray-800 p-8">
+            <form method="POST" action="{{ url_for('register') }}" class="space-y-5">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div>
+                    <label for="username" class="block text-sm font-medium text-gray-300 mb-1.5">Username</label>
+                    <input type="text" id="username" name="username" value="{{ username | default('', true) }}" required autofocus
+                           minlength="3" pattern="[a-zA-Z0-9_]+"
+                           class="block w-full rounded-lg bg-gray-800 border border-gray-700 px-4 py-2.5 text-white placeholder-gray-500 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition"
+                           placeholder="Letters, numbers, underscores">
+                </div>
+
+                <div>
+                    <label for="email" class="block text-sm font-medium text-gray-300 mb-1.5">Email</label>
+                    <input type="email" id="email" name="email" value="{{ email | default('', true) }}" required
+                           class="block w-full rounded-lg bg-gray-800 border border-gray-700 px-4 py-2.5 text-white placeholder-gray-500 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition"
+                           placeholder="you@example.com">
+                </div>
+
+                <div>
+                    <label for="password" class="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
+                    <input type="password" id="password" name="password" required minlength="8"
+                           class="block w-full rounded-lg bg-gray-800 border border-gray-700 px-4 py-2.5 text-white placeholder-gray-500 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition"
+                           placeholder="Minimum 8 characters">
+                </div>
+
+                <div>
+                    <label for="confirm_password" class="block text-sm font-medium text-gray-300 mb-1.5">Confirm Password</label>
+                    <input type="password" id="confirm_password" name="confirm_password" required minlength="8"
+                           class="block w-full rounded-lg bg-gray-800 border border-gray-700 px-4 py-2.5 text-white placeholder-gray-500 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none transition"
+                           placeholder="Re-enter your password">
+                </div>
+
+                <button type="submit"
+                        class="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-500 focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-gray-900 focus:outline-none transition">
+                    Create account
+                </button>
+            </form>
+        </div>
+
+        <p class="mt-6 text-center text-sm text-gray-400">
+            Already have an account?
+            <a href="{{ url_for('login') }}" class="font-medium text-brand-400 hover:text-brand-300 transition">Sign in</a>
+        </p>
+    </div>
+</div>
+{% endblock %}
