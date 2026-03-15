@@ -433,8 +433,13 @@ def init_app():
             admin_user = os.environ.get("ADMIN_USERNAME", "admin")
             admin_pass = os.environ.get("ADMIN_PASSWORD", "admin1234")
             admin_email = os.environ.get("ADMIN_EMAIL", "admin@vault.local")
-            admin = auth_agent.register_user(admin_user, admin_email, admin_pass, role="admin")
+            auth_agent.register_user(admin_user, admin_email, admin_pass, role="admin")
             print(f"[INIT] Admin user '{admin_user}' created.")
+
+        # Create default user account
+        if not User.query.filter_by(username="kiran").first():
+            auth_agent.register_user("kiran", "kiran@freedomwithai.com", "fwai@123")
+            print("[INIT] User 'kiran' created.")
 
 
 init_app()
