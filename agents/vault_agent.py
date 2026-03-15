@@ -11,7 +11,11 @@ from models import Secret, SecretField, Tag, secret_tags
 # ---------------------------------------------------------------------------
 # Encryption
 # ---------------------------------------------------------------------------
-FERNET_KEY = os.environ.get("FERNET_KEY", Fernet.generate_key().decode())
+_raw_key = os.environ.get("FERNET_KEY", "").strip()
+if not _raw_key:
+    _raw_key = Fernet.generate_key().decode()
+    print("[WARN] FERNET_KEY not set, generated ephemeral key. Data will not persist across restarts.")
+FERNET_KEY = _raw_key
 fernet = Fernet(FERNET_KEY.encode() if isinstance(FERNET_KEY, str) else FERNET_KEY)
 
 

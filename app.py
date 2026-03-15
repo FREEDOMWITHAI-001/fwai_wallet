@@ -425,31 +425,52 @@ def not_found(e):
 # Bootstrap admin + DB creation
 # ---------------------------------------------------------------------------
 def init_app():
-    with app.app_context():
-        db.create_all()
+    try:
+        with app.app_context():
+            db.create_all()
 
-        # Enable WAL mode for SQLite only
-        db_uri = app.config["SQLALCHEMY_DATABASE_URI"]
-        if db_uri.startswith("sqlite"):
-            with db.engine.connect() as conn:
-                conn.execute(db.text("PRAGMA journal_mode=WAL"))
-                conn.commit()
+            # Enable WAL mode for SQLite only
+            db_uri = app.config["SQLALCHEMY_DATABASE_URI"]
+            if db_uri.startswith("sqlite"):
+                with db.engine.connect() as conn:
+                    conn.execute(db.text("PRAGMA journal_mode=WAL"))
+                    conn.commit()
 
-        # Create default admin if none exists
-        if not User.query.filter_by(role="admin").first():
-            admin_user = os.environ.get("ADMIN_USERNAME", "admin")
-            admin_pass = os.environ.get("ADMIN_PASSWORD", "admin1234")
-            admin_email = os.environ.get("ADMIN_EMAIL", "admin@vault.local")
-            auth_agent.register_user(admin_user, admin_email, admin_pass, role="admin")
-            print(f"[INIT] Admin user '{admin_user}' created.")
+            # Create default admin if none exists
+            if not User.query.filter_by(role="admin").first():
+                admin_user = os.environ.get("ADMIN_USERNAME", "admin")
+                admin_pass = os.environ.get("ADMIN_PASSWORD", "admin1234")
+                admin_email = os.environ.get("ADMIN_EMAIL", "admin@vault.local")
+                auth_agent.register_user(admin_user, admin_email, admin_pass, role="admin")
+                print(f"[INIT] Admin user '{admin_user}' created.")
 
-        # Create default user account
-        if not User.query.filter_by(username="kiran").first():
-            auth_agent.register_user("kiran", "kiran@freedomwithai.com", "fwai@123")
-            print("[INIT] User 'kiran' created.")
+            # Create default user account
+            if not User.query.filter_by(username="kiran").first():
+                auth_agent.register_user("kiran", "kiran@freedomwithai.com", "fwai@123")
+                print("[INIT] User 'kiran' created.")
+
+            print("[INIT] App initialized successfully.")
+    except Exception as e:
+        import traceback
+        print(f"[INIT ERROR] {e}")
+        traceback.print_exc()
 
 
 init_app()
+
+
+@app.route("/health")
+def health():
+    """Debug endpoint to verify app + DB connectivity."""
+    info = {"status": "ok", "db": app.config["SQLALCHEMY_DATABASE_URI"][:30] + "..."}
+    try:
+        with db.engine.connect() as conn:
+            conn.execute(db.text("SELECT 1"))
+        info["db_connected"] = True
+    except Exception as e:
+        info["db_connected"] = False
+        info["db_error"] = str(e)
+    return jsonify(info)
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=8080)
