@@ -3,12 +3,12 @@
 
 {% block content %}
 <div class="space-y-6">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
             <h1 class="text-2xl font-bold text-white">User Management</h1>
             <p class="mt-1 text-sm text-gray-400">Manage user accounts and roles</p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex gap-2 shrink-0">
             <a href="{{ url_for('admin_secrets') }}"
                class="inline-flex items-center gap-1.5 rounded-lg bg-gray-800 px-4 py-2.5 text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white transition">
                 <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -35,63 +35,110 @@
         </div>
     </div>
 
-    <!-- Users Table -->
+    <!-- Users Table (Desktop) / Card List (Mobile) -->
     <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-800">
-            <thead>
-                <tr class="bg-gray-900/50">
-                    <th class="px-6 py-3.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">User</th>
-                    <th class="px-6 py-3.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Role</th>
-                    <th class="px-6 py-3.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Secrets</th>
-                    <th class="px-6 py-3.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Joined</th>
-                    <th class="px-6 py-3.5 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-800">
-                {% for user in users %}
-                <tr class="hover:bg-gray-800/50 transition">
-                    <td class="px-6 py-4">
-                        <div>
-                            <div class="text-sm font-medium text-white">{{ user.username }}</div>
-                            <div class="text-xs text-gray-500">{{ user.email }}</div>
-                        </div>
-                    </td>
-                    <td class="px-6 py-4">
-                        <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
-                            {% if user.role == 'admin' %}bg-brand-500/10 text-brand-300 border border-brand-500/20
-                            {% else %}bg-gray-700/50 text-gray-400 border border-gray-700{% endif %}">
-                            {{ user.role }}
-                        </span>
-                    </td>
-                    <td class="px-6 py-4 text-sm text-gray-300">{{ user.secrets | length }}</td>
-                    <td class="px-6 py-4 text-sm text-gray-500">{{ user.created_at.strftime('%b %d, %Y') }}</td>
-                    <td class="px-6 py-4">
-                        {% if user.id != current_user.id %}
-                        <div class="flex justify-end gap-2">
-                            <form method="POST" action="{{ url_for('admin_toggle_role', user_id=user.id) }}">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit"
-                                        class="rounded-md px-2.5 py-1.5 text-xs font-medium text-gray-300 bg-gray-800 hover:bg-gray-700 transition">
-                                    {% if user.role == 'admin' %}Demote{% else %}Promote{% endif %}
-                                </button>
-                            </form>
-                            <form method="POST" action="{{ url_for('admin_delete_user', user_id=user.id) }}"
-                                  onsubmit="return confirm('Delete user {{ user.username }} and all their secrets?')">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit"
-                                        class="rounded-md px-2.5 py-1.5 text-xs font-medium text-red-400 bg-red-500/10 hover:bg-red-500/20 transition">
-                                    Delete
-                                </button>
-                            </form>
-                        </div>
-                        {% else %}
-                        <div class="text-right text-xs text-gray-600">You</div>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <!-- Desktop table -->
+        <div class="hidden sm:block overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-800">
+                <thead>
+                    <tr class="bg-gray-900/50">
+                        <th class="px-6 py-3.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">User</th>
+                        <th class="px-6 py-3.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Role</th>
+                        <th class="px-6 py-3.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Secrets</th>
+                        <th class="px-6 py-3.5 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Joined</th>
+                        <th class="px-6 py-3.5 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-800">
+                    {% for user in users %}
+                    <tr class="hover:bg-gray-800/50 transition">
+                        <td class="px-6 py-4">
+                            <div>
+                                <div class="text-sm font-medium text-white">{{ user.username }}</div>
+                                <div class="text-xs text-gray-500">{{ user.email }}</div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+                                {% if user.role == 'admin' %}bg-brand-500/10 text-brand-300 border border-brand-500/20
+                                {% else %}bg-gray-700/50 text-gray-400 border border-gray-700{% endif %}">
+                                {{ user.role }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-300">{{ user.secrets | length }}</td>
+                        <td class="px-6 py-4 text-sm text-gray-500">{{ user.created_at.strftime('%b %d, %Y') }}</td>
+                        <td class="px-6 py-4">
+                            {% if user.id != current_user.id %}
+                            <div class="flex justify-end gap-2">
+                                <form method="POST" action="{{ url_for('admin_toggle_role', user_id=user.id) }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit"
+                                            class="rounded-md px-2.5 py-1.5 text-xs font-medium text-gray-300 bg-gray-800 hover:bg-gray-700 transition">
+                                        {% if user.role == 'admin' %}Demote{% else %}Promote{% endif %}
+                                    </button>
+                                </form>
+                                <form method="POST" action="{{ url_for('admin_delete_user', user_id=user.id) }}"
+                                      onsubmit="return confirm('Delete user {{ user.username }} and all their secrets?')">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit"
+                                            class="rounded-md px-2.5 py-1.5 text-xs font-medium text-red-400 bg-red-500/10 hover:bg-red-500/20 transition">
+                                        Delete
+                                    </button>
+                                </form>
+                            </div>
+                            {% else %}
+                            <div class="text-right text-xs text-gray-600">You</div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Mobile card list -->
+        <div class="sm:hidden divide-y divide-gray-800">
+            {% for user in users %}
+            <div class="p-4 space-y-3">
+                <div class="flex items-start justify-between gap-2">
+                    <div>
+                        <div class="text-sm font-medium text-white">{{ user.username }}</div>
+                        <div class="text-xs text-gray-500">{{ user.email }}</div>
+                    </div>
+                    <span class="shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+                        {% if user.role == 'admin' %}bg-brand-500/10 text-brand-300 border border-brand-500/20
+                        {% else %}bg-gray-700/50 text-gray-400 border border-gray-700{% endif %}">
+                        {{ user.role }}
+                    </span>
+                </div>
+                <div class="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                    <span>{{ user.secrets | length }} secret{{ 's' if user.secrets | length != 1 }}</span>
+                    <span>Joined {{ user.created_at.strftime('%b %d, %Y') }}</span>
+                </div>
+                {% if user.id != current_user.id %}
+                <div class="flex gap-2 pt-1">
+                    <form method="POST" action="{{ url_for('admin_toggle_role', user_id=user.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit"
+                                class="rounded-md px-3 py-1.5 text-xs font-medium text-gray-300 bg-gray-800 hover:bg-gray-700 transition">
+                            {% if user.role == 'admin' %}Demote{% else %}Promote{% endif %}
+                        </button>
+                    </form>
+                    <form method="POST" action="{{ url_for('admin_delete_user', user_id=user.id) }}"
+                          onsubmit="return confirm('Delete user {{ user.username }} and all their secrets?')">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit"
+                                class="rounded-md px-3 py-1.5 text-xs font-medium text-red-400 bg-red-500/10 hover:bg-red-500/20 transition">
+                            Delete
+                        </button>
+                    </form>
+                </div>
+                {% else %}
+                <div class="text-xs text-gray-600">This is you</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
     </div>
 </div>
 {% endblock %}

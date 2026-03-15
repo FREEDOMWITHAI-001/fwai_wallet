@@ -3,9 +3,9 @@
 
 {% block content %}
 <div class="flex min-h-[60vh] items-center justify-center">
-    <div class="text-center">
-        <p class="text-6xl font-bold text-brand-400">{{ code }}</p>
-        <h1 class="mt-4 text-xl font-semibold text-white">{{ message }}</h1>
+    <div class="text-center px-4">
+        <p class="text-5xl sm:text-6xl font-bold text-brand-400">{{ code }}</p>
+        <h1 class="mt-4 text-lg sm:text-xl font-semibold text-white">{{ message }}</h1>
         <p class="mt-2 text-sm text-gray-400">
             {% if code == 403 %}
             You don't have permission to access this resource.

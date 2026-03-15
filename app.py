@@ -17,14 +17,19 @@ from agents import vault_agent, auth_agent, policy_agent
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", secrets.token_hex(32))
-# Use /tmp on Vercel (read-only filesystem), local instance dir otherwise
-_is_vercel = os.environ.get("VERCEL", False)
-_db_path = "/tmp/secrets.db" if _is_vercel else os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "instance", "secrets.db"
-)
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
-    "DATABASE_URL", f"sqlite:///{_db_path}"
-)
+
+# Database: prefer DATABASE_URL (PostgreSQL) for persistence; fallback to SQLite locally
+_database_url = os.environ.get("DATABASE_URL", "")
+if _database_url:
+    # Neon/Supabase use postgres:// but SQLAlchemy needs postgresql://
+    if _database_url.startswith("postgres://"):
+        _database_url = _database_url.replace("postgres://", "postgresql://", 1)
+    app.config["SQLALCHEMY_DATABASE_URI"] = _database_url
+else:
+    _db_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "instance", "secrets.db"
+    )
+    app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{_db_path}"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -423,10 +428,12 @@ def init_app():
     with app.app_context():
         db.create_all()
 
-        # Enable WAL mode for better concurrent read performance
-        with db.engine.connect() as conn:
-            conn.execute(db.text("PRAGMA journal_mode=WAL"))
-            conn.commit()
+        # Enable WAL mode for SQLite only
+        db_uri = app.config["SQLALCHEMY_DATABASE_URI"]
+        if db_uri.startswith("sqlite"):
+            with db.engine.connect() as conn:
+                conn.execute(db.text("PRAGMA journal_mode=WAL"))
+                conn.commit()
 
         # Create default admin if none exists
         if not User.query.filter_by(role="admin").first():
