@@ -43,10 +43,20 @@
                                 New Secret
                             </a>
                             {% if current_user.role == 'admin' %}
-                            <a href="{{ url_for('admin_users') }}"
-                               class="rounded-md px-3 py-2 text-sm font-medium {% if 'admin' in request.endpoint %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-800 hover:text-white{% endif %} transition">
-                                Admin
-                            </a>
+                            <div class="relative group">
+                                <button class="rounded-md px-3 py-2 text-sm font-medium {% if 'admin' in request.endpoint|default('') %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-800 hover:text-white{% endif %} transition inline-flex items-center gap-1">
+                                    Admin
+                                    <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/>
+                                    </svg>
+                                </button>
+                                <div class="absolute left-0 mt-1 w-44 rounded-lg bg-gray-800 border border-gray-700 shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                                    <a href="{{ url_for('admin_users') }}" class="block px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-t-lg transition">Users</a>
+                                    <a href="{{ url_for('admin_secrets') }}" class="block px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition">Secrets</a>
+                                    <a href="{{ url_for('admin_tags') }}" class="block px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition">Tags</a>
+                                    <a href="{{ url_for('admin_audit') }}" class="block px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-b-lg transition">Audit Log</a>
+                                </div>
+                            </div>
                             {% endif %}
                         </div>
                     </div>

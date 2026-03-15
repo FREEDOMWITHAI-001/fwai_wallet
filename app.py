@@ -2,16 +2,15 @@ import os
 import re
 import secrets
 from datetime import datetime, timezone
-from functools import wraps
 
-from cryptography.fernet import Fernet
-import bcrypt
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    flash, session, abort, g
+    flash, session, abort, g, jsonify,
 )
-from flask_sqlalchemy import SQLAlchemy
-from flask_wtf.csrf import CSRFProtect
+
+from extensions import db, csrf
+from models import User, Secret, SecretField, Tag, AuditLog, PolicyConfig
+from agents import vault_agent, auth_agent, policy_agent
 
 # ---------------------------------------------------------------------------
 # App configuration
@@ -31,94 +30,8 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["MAX_FIELDS_PER_SECRET"] = 50
 
-db = SQLAlchemy(app)
-csrf = CSRFProtect(app)
-
-# ---------------------------------------------------------------------------
-# Encryption helpers
-# ---------------------------------------------------------------------------
-FERNET_KEY = os.environ.get("FERNET_KEY", Fernet.generate_key().decode())
-fernet = Fernet(FERNET_KEY.encode() if isinstance(FERNET_KEY, str) else FERNET_KEY)
-
-
-def encrypt_value(plaintext: str) -> str:
-    return fernet.encrypt(plaintext.encode()).decode()
-
-
-def decrypt_value(ciphertext: str) -> str:
-    return fernet.decrypt(ciphertext.encode()).decode()
-
-
-# ---------------------------------------------------------------------------
-# Password helpers
-# ---------------------------------------------------------------------------
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-
-
-def check_password(password: str, hashed: str) -> bool:
-    return bcrypt.checkpw(password.encode(), hashed.encode())
-
-
-# ---------------------------------------------------------------------------
-# Models
-# ---------------------------------------------------------------------------
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128), nullable=False)
-    role = db.Column(db.String(20), nullable=False, default="user")
-    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    secrets = db.relationship("Secret", backref="owner", lazy=True, cascade="all, delete-orphan")
-
-
-class Secret(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(200), nullable=False)
-    description = db.Column(db.Text, default="")
-    visibility = db.Column(db.String(10), nullable=False, default="private")
-    owner_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc),
-                           onupdate=lambda: datetime.now(timezone.utc))
-    fields = db.relationship("SecretField", backref="secret", lazy=True, cascade="all, delete-orphan")
-
-
-class SecretField(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    secret_id = db.Column(db.Integer, db.ForeignKey("secret.id"), nullable=False)
-    field_name = db.Column(db.String(200), nullable=False)
-    field_value_encrypted = db.Column(db.Text, nullable=False)
-
-    @property
-    def decrypted_value(self):
-        return decrypt_value(self.field_value_encrypted)
-
-
-# ---------------------------------------------------------------------------
-# Auth decorators
-# ---------------------------------------------------------------------------
-def login_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if "user_id" not in session:
-            flash("Please log in to continue.", "warning")
-            return redirect(url_for("login"))
-        return f(*args, **kwargs)
-    return decorated
-
-
-def admin_required(f):
-    @wraps(f)
-    @login_required
-    def decorated(*args, **kwargs):
-        if session.get("role") != "admin":
-            flash("Admin access required.", "danger")
-            return redirect(url_for("dashboard"))
-        return f(*args, **kwargs)
-    return decorated
-
+db.init_app(app)
+csrf.init_app(app)
 
 # ---------------------------------------------------------------------------
 # Context processor — make current user available in templates
@@ -127,7 +40,7 @@ def admin_required(f):
 def load_current_user():
     g.current_user = None
     if "user_id" in session:
-        g.current_user = db.session.get(User, session["user_id"])
+        g.current_user = auth_agent.get_current_user(session["user_id"])
         if g.current_user is None:
             session.clear()
 
@@ -176,13 +89,8 @@ def register():
                 flash(e, "danger")
             return render_template("register.html", username=username, email=email)
 
-        user = User(
-            username=username,
-            email=email,
-            password_hash=hash_password(password),
-        )
-        db.session.add(user)
-        db.session.commit()
+        user = auth_agent.register_user(username, email, password)
+        auth_agent.generate_audit_event(user.id, username, "user_register")
         flash("Account created. Please log in.", "success")
         return redirect(url_for("login"))
 
@@ -194,15 +102,23 @@ def login():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        user = User.query.filter_by(username=username).first()
 
-        if user and check_password(password, user.password_hash):
+        # Rate limit login attempts
+        allowed, msg = policy_agent.check_rate_limit(0, "login_attempt")
+        if not allowed:
+            flash(msg, "danger")
+            return render_template("login.html", username=username)
+
+        user = auth_agent.authenticate(username, password)
+        if user:
             session["user_id"] = user.id
             session["username"] = user.username
             session["role"] = user.role
+            auth_agent.generate_audit_event(user.id, username, "user_login")
             flash(f"Welcome back, {user.username}!", "success")
             return redirect(url_for("dashboard"))
 
+        auth_agent.generate_audit_event(None, username, "login_failed")
         flash("Invalid username or password.", "danger")
         return render_template("login.html", username=username)
 
@@ -210,8 +126,9 @@ def login():
 
 
 @app.route("/logout", methods=["POST"])
-@login_required
+@auth_agent.login_required
 def logout():
+    auth_agent.generate_audit_event(session.get("user_id"), session.get("username", ""), "user_logout")
     session.clear()
     flash("You have been logged out.", "info")
     return redirect(url_for("login"))
@@ -221,75 +138,38 @@ def logout():
 # Dashboard
 # ---------------------------------------------------------------------------
 @app.route("/dashboard")
-@login_required
+@auth_agent.login_required
 def dashboard():
     user_id = session["user_id"]
     is_admin = session.get("role") == "admin"
+    tag_filter = request.args.get("tag", "").strip() or None
 
-    if is_admin:
-        my_secrets = Secret.query.filter_by(owner_id=user_id).order_by(Secret.updated_at.desc()).all()
-        other_secrets = Secret.query.filter(Secret.owner_id != user_id).order_by(Secret.updated_at.desc()).all()
-    else:
-        my_secrets = Secret.query.filter_by(owner_id=user_id).order_by(Secret.updated_at.desc()).all()
-        other_secrets = Secret.query.filter(
-            Secret.visibility == "public",
-            Secret.owner_id != user_id
-        ).order_by(Secret.updated_at.desc()).all()
+    my_secrets, other_secrets = vault_agent.list_secrets_for_user(user_id, is_admin, tag_filter)
+    all_tags = vault_agent.list_all_tags()
 
     return render_template(
         "dashboard.html",
         my_secrets=my_secrets,
         other_secrets=other_secrets,
         is_admin=is_admin,
+        all_tags=all_tags,
+        active_tag=tag_filter,
     )
 
 
 # ---------------------------------------------------------------------------
 # Secret CRUD
 # ---------------------------------------------------------------------------
-def _parse_fields(form):
-    """Parse dynamic key-value fields from the form."""
-    fields = []
-    idx = 0
-    while True:
-        name_key = f"field_name_{idx}"
-        value_key = f"field_value_{idx}"
-        if name_key not in form:
-            break
-        fname = form[name_key].strip()
-        fvalue = form[value_key]
-        if fname:
-            fields.append((fname, fvalue))
-        idx += 1
-        if idx > app.config["MAX_FIELDS_PER_SECRET"]:
-            break
-    return fields
-
-
-def _can_view(secret):
-    if session.get("role") == "admin":
-        return True
-    if secret.owner_id == session["user_id"]:
-        return True
-    if secret.visibility == "public":
-        return True
-    return False
-
-
-def _can_edit(secret):
-    if session.get("role") == "admin":
-        return True
-    return secret.owner_id == session["user_id"]
-
-
 @app.route("/secrets/new", methods=["GET", "POST"])
-@login_required
+@auth_agent.login_required
 def secret_create():
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         description = request.form.get("description", "").strip()
         visibility = request.form.get("visibility", "private")
-        fields = _parse_fields(request.form)
+        fields = vault_agent.parse_fields(request.form, app.config["MAX_FIELDS_PER_SECRET"])
+        raw_tags = request.form.get("tags", "").strip()
+        tag_names = [t.strip() for t in raw_tags.split(",") if t.strip()] if raw_tags else []
 
         errors = []
         if not name:
@@ -298,73 +178,77 @@ def secret_create():
             errors.append("Invalid visibility setting.")
         if not fields:
             errors.append("At least one field is required.")
+
+        # Policy checks
+        user_id = session["user_id"]
+        allowed, msg = policy_agent.check_rate_limit(user_id, "secret_create")
+        if not allowed:
+            errors.append(msg)
+        allowed, msg = policy_agent.check_quota(user_id)
+        if not allowed:
+            errors.append(msg)
+        for tn in tag_names:
+            ok, tmsg = policy_agent.check_tag_policy(tn)
+            if not ok:
+                errors.append(tmsg)
+
+        # Content warnings (non-blocking)
+        content_warnings = policy_agent.validate_secret_content(fields)
+        for w in content_warnings:
+            flash(w, "warning")
 
         if errors:
             for e in errors:
                 flash(e, "danger")
             return render_template("secret_form.html", editing=False,
                                    name=name, description=description,
-                                   visibility=visibility, fields=fields)
+                                   visibility=visibility, fields=fields,
+                                   tag_string=raw_tags)
 
-        secret = Secret(
-            name=name,
-            description=description,
-            visibility=visibility,
-            owner_id=session["user_id"],
-        )
-        db.session.add(secret)
-        db.session.flush()
-
-        for fname, fvalue in fields:
-            sf = SecretField(
-                secret_id=secret.id,
-                field_name=fname,
-                field_value_encrypted=encrypt_value(fvalue),
-            )
-            db.session.add(sf)
-
-        db.session.commit()
+        secret = vault_agent.create_secret(user_id, name, description, visibility, fields, tag_names)
+        auth_agent.generate_audit_event(user_id, session["username"], "secret_create",
+                                        detail=f"Created secret '{name}' (id={secret.id})")
         flash("Secret created successfully.", "success")
         return redirect(url_for("secret_view", secret_id=secret.id))
 
-    return render_template("secret_form.html", editing=False, fields=[])
+    return render_template("secret_form.html", editing=False, fields=[], tag_string="")
 
 
 @app.route("/secrets/<int:secret_id>")
-@login_required
+@auth_agent.login_required
 def secret_view(secret_id):
-    secret = db.session.get(Secret, secret_id)
+    secret = vault_agent.get_secret(secret_id)
     if not secret:
         abort(404)
-    if not _can_view(secret):
+    if not vault_agent.can_view(secret, session["user_id"], session.get("role", "")):
         abort(403)
 
-    decrypted_fields = []
-    for f in secret.fields:
-        decrypted_fields.append((f.field_name, f.decrypted_value))
+    decrypted_fields = vault_agent.get_decrypted_fields(secret)
 
     return render_template(
         "secret_view.html",
         secret=secret,
         fields=decrypted_fields,
-        can_edit=_can_edit(secret),
+        can_edit=vault_agent.can_edit(secret, session["user_id"], session.get("role", "")),
     )
 
 
 @app.route("/secrets/<int:secret_id>/edit", methods=["GET", "POST"])
-@login_required
+@auth_agent.login_required
 def secret_edit(secret_id):
-    secret = db.session.get(Secret, secret_id)
+    secret = vault_agent.get_secret(secret_id)
     if not secret:
         abort(404)
-    if not _can_edit(secret):
+    if not vault_agent.can_edit(secret, session["user_id"], session.get("role", "")):
         abort(403)
 
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         description = request.form.get("description", "").strip()
         visibility = request.form.get("visibility", "private")
-        fields = _parse_fields(request.form)
+        fields = vault_agent.parse_fields(request.form, app.config["MAX_FIELDS_PER_SECRET"])
+        raw_tags = request.form.get("tags", "").strip()
+        tag_names = [t.strip() for t in raw_tags.split(",") if t.strip()] if raw_tags else []
 
         errors = []
         if not name:
@@ -373,6 +257,11 @@ def secret_edit(secret_id):
             errors.append("Invalid visibility setting.")
         if not fields:
             errors.append("At least one field is required.")
+
+        for tn in tag_names:
+            ok, tmsg = policy_agent.check_tag_policy(tn)
+            if not ok:
+                errors.append(tmsg)
 
         if errors:
             for e in errors:
@@ -380,96 +269,138 @@ def secret_edit(secret_id):
             return render_template("secret_form.html", editing=True,
                                    secret=secret, name=name,
                                    description=description,
-                                   visibility=visibility, fields=fields)
+                                   visibility=visibility, fields=fields,
+                                   tag_string=raw_tags)
 
-        secret.name = name
-        secret.description = description
-        secret.visibility = visibility
-        secret.updated_at = datetime.now(timezone.utc)
-
-        # Replace all fields
-        SecretField.query.filter_by(secret_id=secret.id).delete()
-        for fname, fvalue in fields:
-            sf = SecretField(
-                secret_id=secret.id,
-                field_name=fname,
-                field_value_encrypted=encrypt_value(fvalue),
-            )
-            db.session.add(sf)
-
-        db.session.commit()
+        vault_agent.update_secret(secret, name, description, visibility, fields, tag_names)
+        auth_agent.generate_audit_event(session["user_id"], session["username"], "secret_edit",
+                                        detail=f"Updated secret '{name}' (id={secret.id})")
         flash("Secret updated successfully.", "success")
         return redirect(url_for("secret_view", secret_id=secret.id))
 
     # GET — populate form with existing data
-    fields = [(f.field_name, f.decrypted_value) for f in secret.fields]
+    fields = [(f.field_name, vault_agent.decrypt_value(f.field_value_encrypted)) for f in secret.fields]
+    tag_string = ", ".join(t.name for t in secret.tags)
     return render_template("secret_form.html", editing=True, secret=secret,
                            name=secret.name, description=secret.description,
-                           visibility=secret.visibility, fields=fields)
+                           visibility=secret.visibility, fields=fields,
+                           tag_string=tag_string)
 
 
 @app.route("/secrets/<int:secret_id>/delete", methods=["POST"])
-@login_required
+@auth_agent.login_required
 def secret_delete(secret_id):
-    secret = db.session.get(Secret, secret_id)
+    secret = vault_agent.get_secret(secret_id)
     if not secret:
         abort(404)
-    if not _can_edit(secret):
+    if not vault_agent.can_edit(secret, session["user_id"], session.get("role", "")):
         abort(403)
 
-    db.session.delete(secret)
-    db.session.commit()
+    secret_name = secret.name
+    vault_agent.delete_secret(secret)
+    auth_agent.generate_audit_event(session["user_id"], session["username"], "secret_delete",
+                                    detail=f"Deleted secret '{secret_name}' (id={secret_id})")
     flash("Secret deleted.", "info")
     return redirect(url_for("dashboard"))
+
+
+# ---------------------------------------------------------------------------
+# Tag API (typeahead autocomplete)
+# ---------------------------------------------------------------------------
+@app.route("/api/tags/search")
+@auth_agent.login_required
+def api_tags_search():
+    q = request.args.get("q", "").strip()
+    tags = vault_agent.search_tags(q) if q else vault_agent.list_all_tags()[:20]
+    return jsonify([{"id": t.id, "name": t.name, "color": t.color} for t in tags])
 
 
 # ---------------------------------------------------------------------------
 # Admin routes
 # ---------------------------------------------------------------------------
 @app.route("/admin/users")
-@admin_required
+@auth_agent.admin_required
 def admin_users():
-    users = User.query.order_by(User.created_at.desc()).all()
+    users = auth_agent.list_users()
     return render_template("admin_users.html", users=users)
 
 
 @app.route("/admin/users/<int:user_id>/toggle-role", methods=["POST"])
-@admin_required
+@auth_agent.admin_required
 def admin_toggle_role(user_id):
-    user = db.session.get(User, user_id)
-    if not user:
-        abort(404)
-    if user.id == session["user_id"]:
+    if user_id == session["user_id"]:
         flash("You cannot change your own role.", "warning")
         return redirect(url_for("admin_users"))
 
-    user.role = "user" if user.role == "admin" else "admin"
-    db.session.commit()
+    user = auth_agent.toggle_user_role(user_id)
+    if not user:
+        abort(404)
+    auth_agent.generate_audit_event(session["user_id"], session["username"], "admin_toggle_role",
+                                    detail=f"Changed {user.username} to {user.role}")
     flash(f"{user.username} is now a{'n admin' if user.role == 'admin' else ' regular user'}.", "success")
     return redirect(url_for("admin_users"))
 
 
 @app.route("/admin/users/<int:user_id>/delete", methods=["POST"])
-@admin_required
+@auth_agent.admin_required
 def admin_delete_user(user_id):
-    user = db.session.get(User, user_id)
-    if not user:
-        abort(404)
-    if user.id == session["user_id"]:
+    if user_id == session["user_id"]:
         flash("You cannot delete your own account.", "warning")
         return redirect(url_for("admin_users"))
 
-    db.session.delete(user)
-    db.session.commit()
-    flash(f"User {user.username} deleted.", "info")
+    user = db.session.get(User, user_id)
+    if not user:
+        abort(404)
+    username = user.username
+    auth_agent.delete_user(user_id)
+    auth_agent.generate_audit_event(session["user_id"], session["username"], "admin_delete_user",
+                                    detail=f"Deleted user '{username}'")
+    flash(f"User {username} deleted.", "info")
     return redirect(url_for("admin_users"))
 
 
 @app.route("/admin/secrets")
-@admin_required
+@auth_agent.admin_required
 def admin_secrets():
     secrets_list = Secret.query.order_by(Secret.updated_at.desc()).all()
     return render_template("admin_secrets.html", secrets=secrets_list)
+
+
+@app.route("/admin/tags")
+@auth_agent.admin_required
+def admin_tags():
+    tags = vault_agent.list_all_tags()
+    return render_template("admin_tags.html", tags=tags)
+
+
+@app.route("/admin/tags/<int:tag_id>/delete", methods=["POST"])
+@auth_agent.admin_required
+def admin_delete_tag(tag_id):
+    tag = vault_agent.delete_tag(tag_id)
+    if not tag:
+        abort(404)
+    auth_agent.generate_audit_event(session["user_id"], session["username"], "admin_delete_tag",
+                                    detail=f"Deleted tag '{tag.name}'")
+    flash(f"Tag '{tag.name}' deleted.", "info")
+    return redirect(url_for("admin_tags"))
+
+
+@app.route("/admin/tags/<int:tag_id>/color", methods=["POST"])
+@auth_agent.admin_required
+def admin_update_tag_color(tag_id):
+    color = request.form.get("color", "#6366f1").strip()
+    tag = vault_agent.update_tag_color(tag_id, color)
+    if not tag:
+        abort(404)
+    flash(f"Tag '{tag.name}' color updated.", "success")
+    return redirect(url_for("admin_tags"))
+
+
+@app.route("/admin/audit")
+@auth_agent.admin_required
+def admin_audit():
+    logs = auth_agent.list_audit_logs(limit=200)
+    return render_template("admin_audit.html", logs=logs)
 
 
 # ---------------------------------------------------------------------------
@@ -502,14 +433,7 @@ def init_app():
             admin_user = os.environ.get("ADMIN_USERNAME", "admin")
             admin_pass = os.environ.get("ADMIN_PASSWORD", "admin1234")
             admin_email = os.environ.get("ADMIN_EMAIL", "admin@vault.local")
-            admin = User(
-                username=admin_user,
-                email=admin_email,
-                password_hash=hash_password(admin_pass),
-                role="admin",
-            )
-            db.session.add(admin)
-            db.session.commit()
+            admin = auth_agent.register_user(admin_user, admin_email, admin_pass, role="admin")
             print(f"[INIT] Admin user '{admin_user}' created.")
 
 

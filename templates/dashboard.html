@@ -18,6 +18,27 @@
         </a>
     </div>
 
+    <!-- Tag Filter Bar -->
+    {% if all_tags %}
+    <div class="flex items-center gap-2 flex-wrap">
+        <span class="text-xs font-medium text-gray-500 uppercase tracking-wider mr-1">Filter by tag:</span>
+        <a href="{{ url_for('dashboard') }}"
+           class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition
+               {% if not active_tag %}bg-brand-600 text-white{% else %}bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white{% endif %}">
+            All
+        </a>
+        {% for tag in all_tags %}
+        <a href="{{ url_for('dashboard', tag=tag.name) }}"
+           class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition
+               {% if active_tag == tag.name %}text-white{% else %}text-gray-400 hover:text-white{% endif %}"
+           style="background-color: {% if active_tag == tag.name %}{{ tag.color }}{% else %}rgba(55,65,81,0.5){% endif %}; {% if active_tag != tag.name %}border: 1px solid rgba(75,85,99,0.5);{% endif %}">
+            <span class="w-2 h-2 rounded-full" style="background-color: {{ tag.color }}"></span>
+            {{ tag.name }}
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     <!-- My Secrets -->
     <section>
         <h2 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
@@ -25,6 +46,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"/>
             </svg>
             My Secrets
+            {% if active_tag %}<span class="text-sm font-normal text-gray-500 ml-2">tagged "{{ active_tag }}"</span>{% endif %}
         </h2>
         {% if my_secrets %}
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -42,6 +64,20 @@
                 {% if secret.description %}
                 <p class="text-xs text-gray-500 mb-3 line-clamp-2">{{ secret.description }}</p>
                 {% endif %}
+                {% if secret.tags %}
+                <div class="flex items-center gap-1.5 mb-3 flex-wrap">
+                    {% for tag in secret.tags[:3] %}
+                    <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-gray-300"
+                          style="background-color: {{ tag.color }}20; border: 1px solid {{ tag.color }}40;">
+                        <span class="w-1.5 h-1.5 rounded-full" style="background-color: {{ tag.color }}"></span>
+                        {{ tag.name }}
+                    </span>
+                    {% endfor %}
+                    {% if secret.tags | length > 3 %}
+                    <span class="text-xs text-gray-500">+{{ secret.tags | length - 3 }} more</span>
+                    {% endif %}
+                </div>
+                {% endif %}
                 <div class="flex items-center justify-between text-xs text-gray-500">
                     <span>{{ secret.fields | length }} field{{ 's' if secret.fields | length != 1 }}</span>
                     <span>{{ secret.updated_at.strftime('%b %d, %Y') }}</span>
@@ -54,8 +90,10 @@
             <svg class="mx-auto h-10 w-10 text-gray-700" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
-            <p class="mt-3 text-sm text-gray-500">No secrets yet.</p>
+            <p class="mt-3 text-sm text-gray-500">{% if active_tag %}No secrets with tag "{{ active_tag }}".{% else %}No secrets yet.{% endif %}</p>
+            {% if not active_tag %}
             <a href="{{ url_for('secret_create') }}" class="mt-2 inline-block text-sm font-medium text-brand-400 hover:text-brand-300 transition">Create your first secret</a>
+            {% endif %}
         </div>
         {% endif %}
     </section>
@@ -68,6 +106,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
             </svg>
             {% if is_admin %}All Other Secrets{% else %}Public Secrets{% endif %}
+            {% if active_tag %}<span class="text-sm font-normal text-gray-500 ml-2">tagged "{{ active_tag }}"</span>{% endif %}
         </h2>
         {% if other_secrets %}
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -85,6 +124,20 @@
                 {% if secret.description %}
                 <p class="text-xs text-gray-500 mb-3 line-clamp-2">{{ secret.description }}</p>
                 {% endif %}
+                {% if secret.tags %}
+                <div class="flex items-center gap-1.5 mb-3 flex-wrap">
+                    {% for tag in secret.tags[:3] %}
+                    <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium text-gray-300"
+                          style="background-color: {{ tag.color }}20; border: 1px solid {{ tag.color }}40;">
+                        <span class="w-1.5 h-1.5 rounded-full" style="background-color: {{ tag.color }}"></span>
+                        {{ tag.name }}
+                    </span>
+                    {% endfor %}
+                    {% if secret.tags | length > 3 %}
+                    <span class="text-xs text-gray-500">+{{ secret.tags | length - 3 }} more</span>
+                    {% endif %}
+                </div>
+                {% endif %}
                 <div class="flex items-center justify-between text-xs text-gray-500">
                     <span class="inline-flex items-center gap-1">
                         <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -99,7 +152,7 @@
         </div>
         {% else %}
         <div class="rounded-xl border border-dashed border-gray-800 p-8 text-center">
-            <p class="text-sm text-gray-500">No {% if is_admin %}other{% else %}public{% endif %} secrets available.</p>
+            <p class="text-sm text-gray-500">No {% if is_admin %}other{% else %}public{% endif %} secrets{% if active_tag %} with tag "{{ active_tag }}"{% endif %}.</p>
         </div>
         {% endif %}
     </section>
